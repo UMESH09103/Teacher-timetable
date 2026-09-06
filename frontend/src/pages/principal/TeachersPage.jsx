@@ -7,7 +7,7 @@ import { SearchInput } from '../../components/ui/SearchInput';
 import { TableSkeleton } from '../../components/ui/Skeleton';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { useToast } from '../../context/ToastContext';
-import { Users, Plus, Edit2, UserX, Phone, Mail, BookOpen } from 'lucide-react';
+import { Users, Plus, Edit2, UserX, Trash2, Phone, Mail, BookOpen, ShieldAlert } from 'lucide-react';
 import api from '../../services/api';
 import { sortClassesAsc } from '../../utils/sortUtils';
 import { UserAvatar } from '../../components/common/UserAvatar';
@@ -28,7 +28,12 @@ export const TeachersPage = () => {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [selectedSubjects, setSelectedSubjects] = useState([]);
+  const [selectedClasses, setSelectedClasses] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Permanent Delete confirmation (Database)
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Deactivate confirmation
   const [deactivateTarget, setDeactivateTarget] = useState(null);
@@ -65,6 +70,7 @@ export const TeachersPage = () => {
     setEmail('');
     setPhone('');
     setSelectedSubjects([]);
+    setSelectedClasses([]);
     setIsModalOpen(true);
   };
 
@@ -75,6 +81,7 @@ export const TeachersPage = () => {
     setEmail(teacher.email);
     setPhone(teacher.phone || '');
     setSelectedSubjects(teacher.subjects?.map((s) => s._id) || []);
+    setSelectedClasses(teacher.classes?.map((c) => c._id) || []);
     setIsModalOpen(true);
   };
 
@@ -86,7 +93,8 @@ export const TeachersPage = () => {
         const res = await api.put(`/teachers/${editingTeacher._id}`, {
           name,
           phone,
-          subjects: selectedSubjects
+          subjects: selectedSubjects,
+          classes: selectedClasses
         });
         if (res.data.success) {
           success('Teacher updated successfully');
@@ -99,7 +107,8 @@ export const TeachersPage = () => {
           employeeId,
           email,
           phone,
-          subjects: selectedSubjects
+          subjects: selectedSubjects,
+          classes: selectedClasses
         });
         if (res.data.success) {
           success('Teacher added and login credentials created (Password: Teacher@123)');
@@ -114,13 +123,31 @@ export const TeachersPage = () => {
     }
   };
 
+  // Permanent delete from MongoDB Database
+  const handleDeleteTeacher = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      const res = await api.delete(`/teachers/${deleteTarget._id}`);
+      if (res.data.success) {
+        success(res.data.message || `Teacher ${deleteTarget.name} permanently deleted from database`);
+        setDeleteTarget(null);
+        fetchTeachers();
+      }
+    } catch (err) {
+      error(err.response?.data?.message || 'Failed to delete teacher');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleDeactivate = async () => {
     if (!deactivateTarget) return;
     setIsDeactivating(true);
     try {
-      const res = await api.delete(`/teachers/${deactivateTarget._id}`);
+      const res = await api.delete(`/teachers/${deactivateTarget._id}?deactivate=true`);
       if (res.data.success) {
-        success('Teacher deactivated');
+        success(res.data.message || 'Teacher deactivated');
         setDeactivateTarget(null);
         fetchTeachers();
       }
@@ -136,6 +163,14 @@ export const TeachersPage = () => {
       setSelectedSubjects(selectedSubjects.filter((id) => id !== subId));
     } else {
       setSelectedSubjects([...selectedSubjects, subId]);
+    }
+  };
+
+  const toggleClass = (classId) => {
+    if (selectedClasses.includes(classId)) {
+      setSelectedClasses(selectedClasses.filter((id) => id !== classId));
+    } else {
+      setSelectedClasses([...selectedClasses, classId]);
     }
   };
 
@@ -163,7 +198,7 @@ export const TeachersPage = () => {
       </div>
 
       {/* Search and Filters */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="w-full sm:w-80">
           <SearchInput
             value={search}
@@ -172,9 +207,19 @@ export const TeachersPage = () => {
             placeholder="Search by name, ID, or email..."
           />
         </div>
-        <span className="text-xs text-slate-500 font-semibold">
-          Total Faculty: <strong>{teachers.length}</strong>
-        </span>
+        <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+          <span className="text-xs text-slate-500 font-semibold">
+            Total Faculty: <strong>{teachers.length}</strong>
+          </span>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={handleOpenAddModal}
+            leftIcon={<Plus className="w-4 h-4" />}
+          >
+            Add New Teacher
+          </Button>
+        </div>
       </div>
 
       {/* Teachers Table (Section 14) */}
@@ -267,17 +312,24 @@ export const TeachersPage = () => {
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           onClick={() => handleOpenEditModal(teacher)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                          title="Edit teacher"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-950/40 transition-colors"
+                          title="Edit Teacher"
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => setDeactivateTarget(teacher)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
-                          title="Deactivate teacher"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors"
+                          title={teacher.isActive ? "Deactivate Teacher" : "Teacher Inactive"}
                         >
                           <UserX className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setDeleteTarget(teacher)}
+                          className="p-1.5 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                          title="Delete Teacher from Database"
+                        >
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </td>
@@ -297,7 +349,7 @@ export const TeachersPage = () => {
         subtitle={
           editingTeacher
             ? `Update details for ${editingTeacher.name}`
-            : 'Register a new faculty member with subjects and login account'
+            : 'Register a new faculty member with subjects, assigned class, and login credentials'
         }
       >
         <form onSubmit={handleSubmitTeacher} className="space-y-4">
@@ -310,7 +362,7 @@ export const TeachersPage = () => {
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Mr. Amit Shah"
+                placeholder="e.g. श्री. अमित शहा"
                 className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-brand-500/20"
                 required
               />
@@ -350,7 +402,7 @@ export const TeachersPage = () => {
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                Phone Number
+                Phone Number (Mobile)
               </label>
               <input
                 type="text"
@@ -362,11 +414,38 @@ export const TeachersPage = () => {
             </div>
           </div>
 
+          {/* Class Teacher Assignment */}
           <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
-              Teaching Specializations (Subjects)
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+              Class Teacher Assignment (वर्गशिक्षक वाटप - ऐच्छिक)
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+              {classes.map((cls) => {
+                const isSelected = selectedClasses.includes(cls._id);
+                return (
+                  <button
+                    key={cls._id}
+                    type="button"
+                    onClick={() => toggleClass(cls._id)}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold border text-center transition-all ${
+                      isSelected
+                        ? 'bg-brand-50 dark:bg-brand-950/40 border-brand-500 text-brand-700 dark:text-brand-300 shadow-sm'
+                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'
+                    }`}
+                  >
+                    {cls.displayName || `${cls.className}-${cls.division}`}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Teaching Specializations */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+              Teaching Specializations (Subjects / शिकवण्याचे विषय)
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-1">
               {subjects.map((sub) => {
                 const isChecked = selectedSubjects.includes(sub._id);
                 return (
@@ -379,12 +458,16 @@ export const TeachersPage = () => {
                         : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
                       }`}
                   >
-                    <span>{sub.name}</span>
-                    <span className="text-[10px] opacity-70">({sub.code})</span>
+                    <span className="truncate">{sub.name}</span>
+                    <span className="text-[10px] opacity-70 shrink-0 ml-1">({sub.code})</span>
                   </button>
                 );
               })}
             </div>
+          </div>
+
+          <div className="p-3 bg-brand-50/60 dark:bg-brand-950/30 border border-brand-200/60 dark:border-brand-800/40 rounded-xl text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+            <span className="font-bold text-brand-700 dark:text-brand-300">🔑 Login Credentials:</span> The teacher can log in using either their registered <strong>Email</strong> or <strong>Mobile number</strong> with default password <code className="bg-white dark:bg-slate-800 px-1.5 py-0.5 rounded font-mono font-bold text-brand-600 dark:text-brand-400">Teacher@123</code>.
           </div>
 
           <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
@@ -398,6 +481,18 @@ export const TeachersPage = () => {
         </form>
       </Modal>
 
+      {/* Permanent Delete from Database Dialog */}
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteTeacher}
+        title="Delete Teacher from Database"
+        message={`Are you sure you want to permanently delete "${deleteTarget?.name}" (${deleteTarget?.employeeId}) from the database? This will permanently delete their account, login credentials, timetable slots, and remove them from class teacher assignments. This action cannot be undone.`}
+        confirmText="Delete Permanently"
+        variant="danger"
+        isLoading={isDeleting}
+      />
+
       {/* Deactivate Dialog */}
       <ConfirmDialog
         isOpen={!!deactivateTarget}
@@ -405,6 +500,8 @@ export const TeachersPage = () => {
         onConfirm={handleDeactivate}
         title="Deactivate Teacher"
         message={`Are you sure you want to deactivate ${deactivateTarget?.name}? They will no longer be assigned to classes or available for substitutions.`}
+        confirmText="Deactivate"
+        variant="danger"
         isLoading={isDeactivating}
       />
     </div>

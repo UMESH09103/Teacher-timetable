@@ -3,6 +3,7 @@ import { Timetable } from '../models/Timetable.js';
 import { Substitution } from '../models/Substitution.js';
 import { TeacherAbsence } from '../models/TeacherAbsence.js';
 import { User } from '../models/User.js';
+import { Class } from '../models/Class.js';
 import { getDayOfWeek } from '../services/conflictService.js';
 
 export const getAllTeachers = async (req, res, next) => {
@@ -165,10 +166,19 @@ export const createTeacher = async (req, res, next) => {
     await User.create({
       name,
       email: email.toLowerCase(),
+      phone: phone ? String(phone).trim() : '',
       password: defaultPassword,
       role: 'teacher',
       teacherId: teacher._id
     });
+
+    // If classes were assigned, link classTeacher on the Class documents
+    if (classes && classes.length > 0) {
+      await Class.updateMany(
+        { _id: { $in: classes } },
+        { $set: { classTeacher: teacher._id } }
+      );
+    }
 
     const populated = await Teacher.findById(teacher._id)
       .populate('subjects', 'name code colorHex')
@@ -207,8 +217,28 @@ export const updateTeacher = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Teacher not found' });
     }
 
-    if (isActive !== undefined) {
-      await User.updateOne({ teacherId: teacher._id }, { isActive });
+    // Sync User account details
+    await User.updateMany(
+      { teacherId: teacher._id },
+      {
+        ...(name && { name }),
+        ...(phone !== undefined && { phone: String(phone).trim() }),
+        ...(isActive !== undefined && { isActive })
+      }
+    );
+
+    // Sync classTeacher assignments
+    if (classes !== undefined) {
+      await Class.updateMany(
+        { classTeacher: teacher._id },
+        { $unset: { classTeacher: '' } }
+      );
+      if (classes.length > 0) {
+        await Class.updateMany(
+          { _id: { $in: classes } },
+          { $set: { classTeacher: teacher._id } }
+        );
+      }
     }
 
     return res.status(200).json({
@@ -228,14 +258,52 @@ export const deleteTeacher = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Teacher not found' });
     }
 
-    // Soft delete/deactivate
-    teacher.isActive = false;
-    await teacher.save();
-    await User.updateOne({ teacherId: teacher._id }, { isActive: false });
+    const teacherName = teacher.name;
+
+    // Support soft deactivation if query param ?deactivate=true is specified
+    if (req.query.deactivate === 'true') {
+      teacher.isActive = false;
+      await teacher.save();
+      await User.updateMany({ teacherId: teacher._id }, { isActive: false });
+      return res.status(200).json({
+        success: true,
+        message: `Teacher ${teacherName} deactivated successfully`
+      });
+    }
+
+    // Complete Database Deletion
+    // 1. Delete from Teacher collection
+    await Teacher.findByIdAndDelete(req.params.id);
+
+    // 2. Delete login User accounts
+    await User.deleteMany({
+      $or: [
+        { teacherId: teacher._id },
+        { email: teacher.email.toLowerCase() }
+      ]
+    });
+
+    // 3. Unassign as classTeacher in Classes
+    await Class.updateMany(
+      { classTeacher: teacher._id },
+      { $unset: { classTeacher: '' } }
+    );
+
+    // 4. Remove assigned timetable slots
+    await Timetable.deleteMany({ teacherId: teacher._id });
+
+    // 5. Remove absence and substitution records
+    await TeacherAbsence.deleteMany({ teacherId: teacher._id });
+    await Substitution.deleteMany({
+      $or: [
+        { originalTeacherId: teacher._id },
+        { substituteTeacherId: teacher._id }
+      ]
+    });
 
     return res.status(200).json({
       success: true,
-      message: `Teacher ${teacher.name} deactivated successfully`
+      message: `Teacher ${teacherName} permanently deleted from database`
     });
   } catch (error) {
     next(error);
