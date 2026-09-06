@@ -2,7 +2,17 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
+import dns from 'dns';
 import xlsx from 'xlsx';
+
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+} catch (e) {
+  console.warn('[Seed] Could not set custom DNS servers:', e.message);
+}
+
+dotenv.config();
+
 import { User } from '../models/User.js';
 import { Teacher } from '../models/Teacher.js';
 import { Class } from '../models/Class.js';
@@ -12,8 +22,6 @@ import { TeacherAbsence } from '../models/TeacherAbsence.js';
 import { Substitution } from '../models/Substitution.js';
 import { Notification } from '../models/Notification.js';
 import { PERIOD_TIMINGS } from '../controllers/timetableController.js';
-
-dotenv.config();
 
 // Teacher alias / typo normalizations found in Excel sheets
 const TEACHER_NORMALIZATIONS = {

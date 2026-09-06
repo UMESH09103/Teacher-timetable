@@ -2,8 +2,14 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import morgan from 'morgan';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { connectDB } from './config/db.js';
 import { errorHandler } from './middleware/errorHandler.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 import authRoutes from './routes/authRoutes.js';
 import teacherRoutes from './routes/teacherRoutes.js';
@@ -62,6 +68,18 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/category-strength', categoryStrengthRoutes);
 app.use('/api/settings', settingsRoutes);
+
+// Serve Frontend build in production or when dist exists
+const frontendDist = path.resolve(__dirname, '../frontend/dist');
+if (fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get('*', (req, res, next) => {
+    if (req.originalUrl.startsWith('/api')) {
+      return next();
+    }
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+}
 
 // Error Handler Middleware
 app.use(errorHandler);

@@ -1,4 +1,12 @@
 import mongoose from 'mongoose';
+import dns from 'dns';
+
+// Ensure MongoDB SRV queries resolve reliably on Windows networks
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+} catch (e) {
+  console.warn('[Database] Could not set custom DNS servers:', e.message);
+}
 
 export const connectDB = async () => {
   try {
