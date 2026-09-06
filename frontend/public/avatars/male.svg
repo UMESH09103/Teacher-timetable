@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="100%" height="100%">
+  <!-- Background Circle (Soft light background for crisp visibility in both dark and light modes) -->
+  <circle cx="100" cy="100" r="96" fill="#f8fafc" stroke="#e2e8f0" stroke-width="4" />
+
+  <!-- Shoulders / Shirt (Solid Black) -->
+  <path d="M 22 178 C 22 138 52 122 80 118 L 80 134 C 88 140 112 140 120 134 L 120 118 C 148 122 178 138 178 178 Z" fill="#111827" />
+
+  <!-- Neck -->
+  <path d="M 80 110 L 80 132 C 90 138 110 138 120 132 L 120 110 Z" fill="#ffffff" stroke="#111827" stroke-width="5" stroke-linejoin="round" />
+
+  <!-- Head & Ears Base (White with black stroke) -->
+  <g>
+    <!-- Left Ear -->
+    <path d="M 60 76 C 52 76 50 88 60 96" fill="#ffffff" stroke="#111827" stroke-width="5" stroke-linecap="round" />
+    <!-- Right Ear -->
+    <path d="M 140 76 C 148 76 150 88 140 96" fill="#ffffff" stroke="#111827" stroke-width="5" stroke-linecap="round" />
+
+    <!-- Face Oval -->
+    <path d="M 62 76 C 62 118 78 130 100 130 C 122 130 138 118 138 76 C 138 48 122 40 100 40 C 78 40 62 48 62 76 Z" fill="#ffffff" stroke="#111827" stroke-width="5" stroke-linejoin="round" />
+  </g>
+
+  <!-- Male Hair (Solid Black matching reference image) -->
+  <path d="M 58 78 C 55 55 60 40 72 32 C 82 25 98 25 106 32 C 114 26 128 26 136 34 C 144 42 145 58 142 76 C 138 68 134 66 126 68 C 116 70 108 65 98 62 C 86 58 74 65 65 72 C 60 76 59 78 58 78 Z" fill="#111827" />
+  <!-- Hair Sideburns -->
+  <path d="M 62 70 L 62 82 L 67 76 Z" fill="#111827" />
+  <path d="M 138 70 L 138 82 L 133 76 Z" fill="#111827" />
+</svg>

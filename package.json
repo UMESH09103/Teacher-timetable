@@ -1,0 +1,16 @@
+{
+  "name": "school-attendance-system",
+  "version": "1.0.0",
+  "description": "School Attendance Management System",
+  "scripts": {
+    "start": "node backend/server.js",
+    "dev": "cd backend && nodemon server.js",
+    "install-all": "cd backend && npm install --include=dev && cd ../frontend && npm install --include=dev",
+    "build": "cd frontend && npm run build",
+    "render-build": "npm run install-all && npm run build",
+    "seed": "node backend/utils/seed.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
