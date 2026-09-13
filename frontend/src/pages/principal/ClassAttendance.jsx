@@ -25,19 +25,25 @@ import {
   Check,
   UserX,
   FileSpreadsheet,
-  GraduationCap
+  GraduationCap,
+  Download,
+  Printer,
+  FileText,
+  ChevronDown
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import api from '../../services/api';
 import { sortClassesAsc } from '../../utils/sortUtils';
 
 export const ClassAttendance = () => {
-  const { error } = useToast();
+  const { error, success } = useToast();
   const { isMarathi } = useLanguage();
 
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [standardFilter, setStandardFilter] = useState('all');
   const [divisionFilter, setDivisionFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
 
   // Room display helper to prevent "Room Room 101"
   const formatRoom = (room) => {
@@ -102,6 +108,245 @@ export const ClassAttendance = () => {
       cls.roomNumber?.toLowerCase().includes(query)
     );
   });
+
+  // Export Entire School Class Attendance to Excel (.xlsx)
+  const handleExportExcel = () => {
+    try {
+      if (!classSummary || classSummary.length === 0) {
+        error(isMarathi ? 'डाउनलोड करण्यासाठी उपस्थिती माहिती उपलब्ध नाही' : 'No attendance data available to download');
+        return;
+      }
+
+      const rows = [];
+
+      // 1. Institutional Letterhead Header
+      rows.push(['क्रांतिवीर वसंतराव नारायणराव नाईक शिक्षण प्रसारक संस्था, नाशिक संचलित']);
+      rows.push(['माध्यमिक व उच्च माध्यमिक विद्यामंदिर, राजापूर ता.येवला जि.नाशिक']);
+      rows.push([`वर्गनिहाय दैनिक विद्यार्थी उपस्थिती अहवाल • दिनांक: ${selectedDate}`]);
+      rows.push([]);
+
+      // 2. Metrics Summary Box
+      if (metrics) {
+        rows.push(['--- दैनिक उपस्थिती गोषवारा (ATTENDANCE SUMMARY) ---']);
+        rows.push([
+          `एकूण पटसंख्या: ${metrics.totalEnrolled}`,
+          `एकूण उपस्थित विद्यार्थी: ${metrics.totalPresent}`,
+          `एकूण गैरहजर विद्यार्थी: ${metrics.totalAbsent}`,
+          `सरासरी उपस्थिती टक्केवारी: ${metrics.overallPercentage}%`,
+          `हजेरी भरलेले वर्ग: ${metrics.submittedClasses} / ${metrics.totalClasses}`
+        ]);
+        rows.push([
+          `मुले उपस्थिती: ${metrics.boysPresent || 0} / ${metrics.totalBoysEnrolled || 0}`,
+          `मुली उपस्थिती: ${metrics.girlsPresent || 0} / ${metrics.totalGirlsEnrolled || 0}`,
+          `प्रलंबित वर्ग: ${metrics.pendingClasses || 0}`
+        ]);
+        rows.push([]);
+      }
+
+      // 3. Table Headers
+      rows.push([
+        'अ.क्र.',
+        'वर्ग व तुकडी (Class)',
+        'वर्गखोली (Room)',
+        'वर्गशिक्षक (Class Teacher)',
+        'हजेरी स्थिती (Status)',
+        'मुले हजर (Boys Pres.)',
+        'मुले एकूण (Boys Tot.)',
+        'मुली हजर (Girls Pres.)',
+        'मुली एकूण (Girls Tot.)',
+        'एकूण हजर (Total Pres.)',
+        'एकूण गैरहजर (Absent)',
+        'एकूण पटसंख्या (Total Enrolled)',
+        'उपस्थिती % (Attendance %)',
+        'नोंदणी वेळ (Time)',
+        'विशेष शेरा (Remarks)'
+      ]);
+
+      // 4. Data Rows
+      filteredSummary.forEach((cls, idx) => {
+        const statusText = cls.isSubmitted
+          ? isMarathi ? 'नोंद झाली (Submitted)' : 'Submitted'
+          : isMarathi ? 'प्रलंबित (Pending)' : 'Pending';
+
+        const submittedTime = cls.submittedAt
+          ? new Date(cls.submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          : '-';
+
+        rows.push([
+          idx + 1,
+          cls.displayName || `${cls.className}-${cls.division}`,
+          formatRoom(cls.roomNumber),
+          cls.classTeacher?.name || 'Class Teacher',
+          statusText,
+          cls.isSubmitted ? cls.boysPresent : 0,
+          cls.totalBoys || 0,
+          cls.isSubmitted ? cls.girlsPresent : 0,
+          cls.totalGirls || 0,
+          cls.isSubmitted ? cls.totalPresent : 0,
+          cls.isSubmitted ? cls.totalAbsent : 0,
+          cls.totalStudents || 0,
+          cls.isSubmitted ? `${cls.percentage}%` : '0%',
+          submittedTime,
+          cls.remarks || '-'
+        ]);
+      });
+
+      // 5. Total Row
+      if (metrics) {
+        rows.push([
+          'शाळा एकूण (Total)',
+          `${filteredSummary.length} वर्ग`,
+          '-',
+          '-',
+          `${metrics.submittedClasses}/${metrics.totalClasses} भरले`,
+          metrics.boysPresent || 0,
+          metrics.totalBoysEnrolled || 0,
+          metrics.girlsPresent || 0,
+          metrics.totalGirlsEnrolled || 0,
+          metrics.totalPresent || 0,
+          metrics.totalAbsent || 0,
+          metrics.totalEnrolled || 0,
+          `${metrics.overallPercentage}%`,
+          '-',
+          '-'
+        ]);
+      }
+
+      // 6. Build Sheet and Workbook
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+
+      // Auto column widths
+      ws['!cols'] = [
+        { wch: 8 },  // Sr. No.
+        { wch: 20 }, // Class
+        { wch: 14 }, // Room
+        { wch: 24 }, // Teacher
+        { wch: 18 }, // Status
+        { wch: 14 }, // Boys Pres
+        { wch: 14 }, // Boys Tot
+        { wch: 14 }, // Girls Pres
+        { wch: 14 }, // Girls Tot
+        { wch: 16 }, // Total Pres
+        { wch: 14 }, // Absent
+        { wch: 18 }, // Enrolled
+        { wch: 18 }, // Attendance %
+        { wch: 16 }, // Time
+        { wch: 25 }  // Remarks
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Class Attendance');
+
+      const fileName = `Class_Attendance_${selectedDate}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      success(isMarathi ? `हजेरी एक्सेल फाईल यशस्वीरित्या डाउनलोड झाली (${fileName})` : `Attendance Excel downloaded (${fileName})`);
+    } catch (err) {
+      console.error('Excel Export Error:', err);
+      error(isMarathi ? 'एक्सेल फाईल तयार करताना त्रुटी आली' : 'Failed to export attendance Excel file');
+    }
+  };
+
+  // Export Class Attendance to CSV (.csv)
+  const handleExportCSV = () => {
+    try {
+      if (!classSummary || classSummary.length === 0) {
+        error(isMarathi ? 'माहिती उपलब्ध नाही' : 'No data to export');
+        return;
+      }
+
+      const headers = [
+        'Sr No',
+        'Class',
+        'Room',
+        'Class Teacher',
+        'Status',
+        'Boys Present',
+        'Boys Total',
+        'Girls Present',
+        'Girls Total',
+        'Total Present',
+        'Total Absent',
+        'Total Enrolled',
+        'Attendance %',
+        'Remarks'
+      ];
+
+      const csvRows = [headers.join(',')];
+
+      filteredSummary.forEach((cls, idx) => {
+        const row = [
+          idx + 1,
+          `"${cls.displayName || cls.className + '-' + cls.division}"`,
+          `"${formatRoom(cls.roomNumber)}"`,
+          `"${cls.classTeacher?.name || ''}"`,
+          cls.isSubmitted ? 'Submitted' : 'Pending',
+          cls.isSubmitted ? cls.boysPresent : 0,
+          cls.totalBoys || 0,
+          cls.isSubmitted ? cls.girlsPresent : 0,
+          cls.totalGirls || 0,
+          cls.isSubmitted ? cls.totalPresent : 0,
+          cls.isSubmitted ? cls.totalAbsent : 0,
+          cls.totalStudents || 0,
+          `"${cls.isSubmitted ? cls.percentage : 0}%"`,
+          `"${cls.remarks || ''}"`
+        ];
+        csvRows.push(row.join(','));
+      });
+
+      // UTF-8 BOM so Marathi characters render properly in Excel
+      const blob = new Blob(['\uFEFF' + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Class_Attendance_${selectedDate}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      success(isMarathi ? 'हजेरी CSV फाईल डाउनलोड झाली' : 'Attendance CSV downloaded successfully');
+    } catch (err) {
+      console.error(err);
+      error('Failed to export CSV');
+    }
+  };
+
+  // Print Report View
+  const handlePrintReport = () => {
+    window.print();
+  };
+
+  // Export Single Class Attendance Sheet (.xlsx)
+  const handleExportSingleClass = (cls) => {
+    if (!cls) return;
+    try {
+      const rows = [
+        ['क्रांतिवीर वसंतराव नारायणराव नाईक शिक्षण प्रसारक संस्था, नाशिक संचलित'],
+        ['माध्यमिक व उच्च माध्यमिक विद्यामंदिर, राजापूर ता.येवला जि.नाशिक'],
+        [`वर्ग उपस्थिती अहवाल • वर्ग: ${cls.displayName} • दिनांक: ${selectedDate}`],
+        [],
+        ['वर्गशिक्षक (Class Teacher):', cls.classTeacher?.name || '-'],
+        ['वर्गखोली (Room):', formatRoom(cls.roomNumber)],
+        ['उपस्थिती टक्केवारी (Attendance %):', `${cls.percentage}%`],
+        [],
+        ['तपशील (Category)', 'हजर (Present)', 'एकूण (Total)', 'गैरहजर (Absent)'],
+        ['मुले (Boys)', cls.boysPresent, cls.totalBoys, cls.boysAbsent],
+        ['मुली (Girls)', cls.girlsPresent, cls.totalGirls, cls.girlsAbsent],
+        ['एकूण विद्यार्थी (Total)', cls.totalPresent, cls.totalStudents, cls.totalAbsent],
+        [],
+        ['नोंद / विशेष शेरा (Remarks):', cls.remarks || 'काही नाही (None)']
+      ];
+
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols'] = [{ wch: 25 }, { wch: 20 }, { wch: 20 }, { wch: 20 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, `${cls.className}-${cls.division}`);
+      XLSX.writeFile(wb, `Attendance_${cls.className}_${cls.division}_${selectedDate}.xlsx`);
+      success(isMarathi ? 'वर्गाचे हजेरी पत्रक डाउनलोड झाले' : 'Class attendance sheet downloaded');
+    } catch (err) {
+      console.error(err);
+      error('Failed to export single class attendance');
+    }
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-200">
@@ -202,6 +447,97 @@ export const ClassAttendance = () => {
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-brand-600' : ''}`} />
           </button>
+
+          {/* Download Dropdown */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsDownloadMenuOpen((prev) => !prev)}
+              className="px-3.5 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all"
+              title={isMarathi ? 'हजेरी अहवाल डाउनलोड करा' : 'Download Attendance Report'}
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>{isMarathi ? 'हजेरी डाउनलोड' : 'Download'}</span>
+              <ChevronDown className={`w-3 h-3 transition-transform ${isDownloadMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isDownloadMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-20"
+                  onClick={() => setIsDownloadMenuOpen(false)}
+                />
+                <div className="absolute right-0 top-full mt-2 w-60 p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl z-30 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="px-3 py-1.5 border-b border-slate-100 dark:border-slate-800 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                    {isMarathi ? 'डाउनलोड पर्याय निवडा' : 'Export Options'}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsDownloadMenuOpen(false);
+                      handleExportExcel();
+                    }}
+                    className="w-full text-left p-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800/80 flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-200 transition-colors group"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <FileSpreadsheet className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="block font-bold text-slate-900 dark:text-white">
+                        Excel Spreadsheet (.xlsx)
+                      </span>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">
+                        {isMarathi ? 'संपूर्ण शाळा वर्गवार अहवाल' : 'Complete school class breakdown'}
+                      </span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsDownloadMenuOpen(false);
+                      handleExportCSV();
+                    }}
+                    className="w-full text-left p-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800/80 flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-200 transition-colors group"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="block font-bold text-slate-900 dark:text-white">
+                        CSV Document (.csv)
+                      </span>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">
+                        {isMarathi ? 'सुलभ डेटा फॉरमॅट' : 'Plain comma separated values'}
+                      </span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsDownloadMenuOpen(false);
+                      handlePrintReport();
+                    }}
+                    className="w-full text-left p-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800/80 flex items-center gap-2.5 text-xs text-slate-700 dark:text-slate-200 transition-colors group"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <Printer className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="block font-bold text-slate-900 dark:text-white">
+                        Print / Save as PDF
+                      </span>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">
+                        {isMarathi ? 'प्रिंट किंवा पीडीएफ सेव्ह करा' : 'Browser print / save dialog'}
+                      </span>
+                    </div>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -415,16 +751,28 @@ export const ClassAttendance = () => {
               </p>
             </div>
 
-            {/* Local Search Input */}
-            <div className="relative w-full sm:w-64">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={isMarathi ? 'वर्ग किंवा शिक्षक शोधा...' : 'Search class or teacher...'}
-                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-brand-500/20"
-              />
+            {/* Local Search & Quick Export Button */}
+            <div className="flex items-center gap-2.5 w-full sm:w-auto">
+              <div className="relative w-full sm:w-60">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={isMarathi ? 'वर्ग किंवा शिक्षक शोधा...' : 'Search class or teacher...'}
+                  className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-brand-500/20"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={handleExportExcel}
+                className="px-3 py-1.5 rounded-xl border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all shrink-0"
+                title={isMarathi ? 'एक्सेल फाइल डाउनलोड करा' : 'Export to Excel'}
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Excel</span>
+              </button>
             </div>
           </div>
 
@@ -693,7 +1041,16 @@ export const ClassAttendance = () => {
               </div>
             )}
 
-            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => handleExportSingleClass(inspectClass)}
+                leftIcon={<Download className="w-3.5 h-3.5" />}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                {isMarathi ? 'या वर्गाचे हजेरी पत्रक (.xlsx)' : 'Download Class Sheet (.xlsx)'}
+              </Button>
               <Button variant="outline" size="sm" onClick={() => setInspectClass(null)}>
                 {isMarathi ? 'बंद करा' : 'Close'}
               </Button>

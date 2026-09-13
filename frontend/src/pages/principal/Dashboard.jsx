@@ -635,6 +635,7 @@ export const Dashboard = () => {
             {activeTab === 'period' && (
               <PeriodView
                 classes={classes}
+                teachers={teachers}
                 timetableData={timetableData}
                 activePeriod={activePeriod}
                 onPeriodChange={setActivePeriod}
