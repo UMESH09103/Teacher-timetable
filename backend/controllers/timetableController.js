@@ -18,6 +18,82 @@ export const PERIOD_TIMINGS = [
   { period: 8, startTime: '03:45', endTime: '04:20' }
 ];
 
+/**
+ * Calculates current live bell period based on server/local time
+ */
+export const getLiveBellPeriod = (now = new Date()) => {
+  const currentHours = now.getHours();
+  const currentMinutes = now.getMinutes();
+  const currentSeconds = now.getSeconds();
+  const totalSeconds = currentHours * 3600 + currentMinutes * 60 + currentSeconds;
+
+  // Convert period timings to seconds of day (24-hr)
+  const parsed = PERIOD_TIMINGS.map((p, idx) => {
+    const [sh, sm] = p.startTime.split(':').map(Number);
+    const [eh, em] = p.endTime.split(':').map(Number);
+    const startH = sh < 8 ? sh + 12 : sh;
+    const endH = eh < 8 ? eh + 12 : eh;
+    return {
+      ...p,
+      startSec: startH * 3600 + sm * 60,
+      endSec: endH * 3600 + em * 60,
+      isLast: idx === PERIOD_TIMINGS.length - 1
+    };
+  });
+
+  const schoolStart = parsed[0].startSec;             // 11:10 AM
+  const schoolEnd = parsed[parsed.length - 1].endSec; // 04:20 PM
+  const recessStart = (13 * 60 + 35) * 60;            // 01:35 PM
+  const recessEnd = (14 * 60) * 60;                   // 02:00 PM
+
+  if (totalSeconds < schoolStart) {
+    return {
+      period: 1,
+      liveStatus: 'before',
+      label: 'शाळा सुरू होणार (School Starts Soon)',
+      timing: '11:10 AM'
+    };
+  }
+
+  if (totalSeconds >= schoolEnd) {
+    return {
+      period: 8,
+      liveStatus: 'after',
+      label: 'आजचे सत्र संपले (School Closed for Today)',
+      timing: '04:20 PM'
+    };
+  }
+
+  // Lunch Recess
+  if (totalSeconds >= recessStart && totalSeconds < recessEnd) {
+    return {
+      period: 5,
+      liveStatus: 'recess',
+      label: 'दुपारची मोठी सुट्टी (Lunch Recess)',
+      timing: '01:35 PM – 02:00 PM'
+    };
+  }
+
+  // Exact period matching
+  for (const p of parsed) {
+    if (totalSeconds >= p.startSec && (p.isLast ? totalSeconds <= p.endSec : totalSeconds < p.endSec)) {
+      return {
+        period: p.period,
+        liveStatus: 'in_session',
+        label: `तासिका क्र. ${p.period} (Period ${p.period})`,
+        timing: `${p.startTime} – ${p.endTime}`
+      };
+    }
+  }
+
+  return {
+    period: 1,
+    liveStatus: 'in_session',
+    label: 'तासिका क्र. 1 (Period 1)',
+    timing: '11:10 – 11:50'
+  };
+};
+
 export const getTimetable = async (req, res, next) => {
   try {
     const { day, classId, teacherId, periodNumber, academicYear } = req.query;
@@ -173,30 +249,16 @@ export const getLiveTimetable = async (req, res, next) => {
       });
     }
 
-    // Determine current period if not explicitly given
-    let activePeriod = 1;
-    if (reqPeriod) {
-      activePeriod = Number(reqPeriod);
-    } else {
-      const now = new Date();
-      const currentHours = now.getHours();
-      const currentMinutes = now.getMinutes();
-      const currentTimeVal = currentHours * 60 + currentMinutes;
+    // Determine live bell period right now based on real time
+    const liveBell = getLiveBellPeriod(new Date());
+    const currentLivePeriod = liveBell.period;
+    const liveStatus = liveBell.liveStatus;
 
-      // Find which period falls into current time
-      for (const p of PERIOD_TIMINGS) {
-        const [sh, sm] = p.startTime.split(':').map(Number);
-        const [eh, em] = p.endTime.split(':').map(Number);
-        const startVal = sh * 60 + sm;
-        const endVal = eh * 60 + em;
-        if (currentTimeVal >= startVal && currentTimeVal <= endVal) {
-          activePeriod = p.period;
-          break;
-        }
-      }
-    }
+    // Active period being viewed/inspected (defaults to real-time currentLivePeriod)
+    const activePeriod = reqPeriod ? Number(reqPeriod) : currentLivePeriod;
 
     const periodInfo = PERIOD_TIMINGS.find((p) => p.period === activePeriod) || PERIOD_TIMINGS[0];
+    const currentPeriodInfo = PERIOD_TIMINGS.find((p) => p.period === currentLivePeriod) || PERIOD_TIMINGS[0];
 
     // Fetch all active classes
     const rawClasses = await Class.find({ isActive: true })
@@ -287,7 +349,11 @@ export const getLiveTimetable = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       activePeriod,
+      currentLivePeriod,
+      liveStatus,
+      liveBell,
       periodInfo,
+      currentPeriodInfo,
       date: targetDate,
       day,
       classes: liveClasses

@@ -41,3 +41,92 @@ export const ROLES = {
   PRINCIPAL: 'principal',
   TEACHER: 'teacher'
 };
+
+/**
+ * Calculates current live bell period based on exact local time
+ */
+export const getLiveBellPeriodInfo = (now = new Date(), timings = PERIOD_TIMINGS) => {
+  const currentHours = now.getHours();
+  const currentMinutes = now.getMinutes();
+  const currentSeconds = now.getSeconds();
+  const totalSeconds = currentHours * 3600 + currentMinutes * 60 + currentSeconds;
+
+  // Sunday weekly holiday check
+  if (now.getDay() === 0) {
+    return {
+      period: 0,
+      liveStatus: 'holiday',
+      label: 'रविवार साप्ताहिक सुट्टी (Sunday Holiday)',
+      timing: '-'
+    };
+  }
+
+  const list = timings && timings.length > 0 ? timings : DEFAULT_PERIOD_TIMINGS;
+
+  // Parse all periods with 12h -> 24h conversion into seconds
+  const parsed = list.map((p, idx) => {
+    const [sh, sm] = (p.startTime || '11:00').split(':').map(Number);
+    const [eh, em] = (p.endTime || '12:00').split(':').map(Number);
+    const startH = sh < 8 ? sh + 12 : sh;
+    const endH = eh < 8 ? eh + 12 : eh;
+    return {
+      ...p,
+      startSec: startH * 3600 + sm * 60,
+      endSec: endH * 3600 + em * 60,
+      isLast: idx === list.length - 1
+    };
+  });
+
+  const schoolStart = parsed[0].startSec;             // 11:10 AM
+  const schoolEnd = parsed[parsed.length - 1].endSec; // 04:20 PM
+  const recessStart = (13 * 60 + 35) * 60;            // 01:35 PM
+  const recessEnd = (14 * 60) * 60;                   // 02:00 PM
+
+  if (totalSeconds < schoolStart) {
+    return {
+      period: parsed[0].period,
+      liveStatus: 'before',
+      label: 'शाळा सुरू होणार (School Starts Soon)',
+      timing: '11:10 AM'
+    };
+  }
+
+  if (totalSeconds >= schoolEnd) {
+    return {
+      period: parsed[parsed.length - 1].period,
+      liveStatus: 'after',
+      label: 'आजचे सत्र संपले (School Closed for Today)',
+      timing: '04:20 PM'
+    };
+  }
+
+  // Lunch Recess
+  if (totalSeconds >= recessStart && totalSeconds < recessEnd) {
+    return {
+      period: 5,
+      liveStatus: 'recess',
+      label: 'दुपारची मोठी सुट्टी (Lunch Recess)',
+      timing: '01:35 PM – 02:00 PM'
+    };
+  }
+
+  // Exact period matching
+  for (const p of parsed) {
+    if (totalSeconds >= p.startSec && (p.isLast ? totalSeconds <= p.endSec : totalSeconds < p.endSec)) {
+      return {
+        period: p.period,
+        liveStatus: 'in_session',
+        label: `तासिका क्र. ${p.period} (Period ${p.period})`,
+        timing: `${p.startTime} – ${p.endTime}`
+      };
+    }
+  }
+
+  return {
+    period: 1,
+    liveStatus: 'in_session',
+    label: 'तासिका क्र. 1 (Period 1)',
+    timing: '11:10 – 11:50'
+  };
+};
+

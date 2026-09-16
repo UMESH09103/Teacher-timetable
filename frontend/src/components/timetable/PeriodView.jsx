@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Card } from '../ui/Card';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
-import { PERIOD_TIMINGS } from '../../constants';
+import { PERIOD_TIMINGS, getLiveBellPeriodInfo } from '../../constants';
 import { 
   Clock, 
   User, 
@@ -32,6 +32,7 @@ export const PeriodView = ({
   const sortedClasses = sortClassesAsc(classes);
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchFilter, setSearchFilter] = useState('');
+  const liveBell = getLiveBellPeriodInfo(new Date());
 
   const currentTiming = PERIOD_TIMINGS.find((p) => p.period === activePeriod) || PERIOD_TIMINGS[0];
 
@@ -145,19 +146,36 @@ export const PeriodView = ({
 
         {/* Period Pills */}
         <div className="flex flex-wrap items-center gap-1.5">
-          {PERIOD_TIMINGS.map((p) => (
-            <button
-              key={p.period}
-              onClick={() => onPeriodChange(p.period)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                activePeriod === p.period
-                  ? 'bg-brand-600 text-white shadow-sm shadow-brand-500/20 scale-105'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-              }`}
-            >
-              P{p.period}
-            </button>
-          ))}
+          {PERIOD_TIMINGS.map((p) => {
+            const isLive = liveBell.period === p.period && liveBell.liveStatus === 'in_session';
+            const isSelected = activePeriod === p.period;
+
+            return (
+              <button
+                key={p.period}
+                onClick={() => onPeriodChange(p.period)}
+                className={`relative px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  isSelected
+                    ? 'bg-brand-600 text-white shadow-sm shadow-brand-500/20 scale-105'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                }`}
+              >
+                <span>P{p.period}</span>
+                {isLive && (
+                  <span
+                    className={`inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[9px] font-black uppercase ${
+                      isSelected
+                        ? 'bg-white/20 text-white'
+                        : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    LIVE
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 

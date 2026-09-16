@@ -12,7 +12,7 @@ import { Drawer } from '../../components/ui/Drawer';
 import { CandidateCard } from '../../components/substitutions/CandidateCard';
 import { ConfirmAssignModal } from '../../components/substitutions/ConfirmAssignModal';
 import { CardSkeleton, TableSkeleton } from '../../components/ui/Skeleton';
-import { PERIOD_TIMINGS, DAY_NAMES_MARATHI } from '../../constants';
+import { PERIOD_TIMINGS, DAY_NAMES_MARATHI, getLiveBellPeriodInfo } from '../../constants';
 import {
   Users,
   School,
@@ -60,7 +60,7 @@ export const Dashboard = () => {
   const [subjects, setSubjects] = useState([]);
   const [timetableData, setTimetableData] = useState([]);
   const [activeTab, setActiveTab] = useState(() => getTabFromPath(location.pathname));
-  const [activePeriod, setActivePeriod] = useState(1);
+  const [activePeriod, setActivePeriod] = useState(() => getLiveBellPeriodInfo(new Date()).period || 1);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [isLoading, setIsLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -210,45 +210,13 @@ export const Dashboard = () => {
     if (isSunday) {
       return { status: 'holiday', label: 'रविवार साप्ताहिक सुट्टी (Sunday Holiday)', timing: 'शाळा बंद' };
     }
-    const curHour = currentTime.getHours();
-    const curMin = currentTime.getMinutes();
-    const totalMinutes = curHour * 60 + curMin;
-
-    const schoolStart = 11 * 60 + 10; // 11:10 AM
-    const schoolEnd = 16 * 60 + 20;   // 04:20 PM
-
-    if (totalMinutes < schoolStart) {
-      return { status: 'before', label: 'सत्र प्रारंभ होणार (School Starts Soon)', timing: '11:10 AM' };
-    }
-    if (totalMinutes > schoolEnd) {
-      return { status: 'after', label: 'आजचे सत्र संपले (School Closed for Today)', timing: '04:20 PM' };
-    }
-
-    // Mid-day break (01:35 PM to 02:00 PM)
-    if (totalMinutes >= 13 * 60 + 35 && totalMinutes < 14 * 60) {
-      return { status: 'recess', label: 'दुपारची मोठी सुट्टी (Lunch Recess)', timing: '01:35 PM – 02:00 PM' };
-    }
-
-    for (const p of PERIOD_TIMINGS) {
-      const [sh, sm] = p.startTime.split(':').map(Number);
-      const [eh, em] = p.endTime.split(':').map(Number);
-      // adjust for PM after 12
-      const startH = sh < 8 ? sh + 12 : sh;
-      const endH = eh < 8 ? eh + 12 : eh;
-      const sTotal = startH * 60 + sm;
-      const eTotal = endH * 60 + em;
-
-      if (totalMinutes >= sTotal && totalMinutes <= eTotal) {
-        return {
-          status: 'running',
-          period: p.period,
-          label: `तासिका क्र. ${p.period} (Period ${p.period})`,
-          timing: `${p.startTime} – ${p.endTime}`
-        };
-      }
-    }
-
-    return { status: 'running', period: 1, label: 'नियमित तासिका सत्र', timing: '11:10 AM – 04:20 PM' };
+    const bell = getLiveBellPeriodInfo(currentTime, PERIOD_TIMINGS);
+    return {
+      status: bell.liveStatus === 'in_session' ? 'running' : bell.liveStatus,
+      period: bell.period,
+      label: bell.label,
+      timing: bell.timing
+    };
   };
 
   const periodStatus = getLivePeriodStatus();

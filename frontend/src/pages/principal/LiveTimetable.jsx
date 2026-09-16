@@ -3,13 +3,14 @@ import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { TableSkeleton } from '../../components/ui/Skeleton';
-import { PERIOD_TIMINGS } from '../../constants';
+import { PERIOD_TIMINGS, getLiveBellPeriodInfo } from '../../constants';
 import { Radio, Clock, School, User, Repeat, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
 import api from '../../services/api';
 
 export const LiveTimetable = () => {
+  const [liveInfo, setLiveInfo] = useState(() => getLiveBellPeriodInfo(new Date()));
   const [liveData, setLiveData] = useState(null);
-  const [selectedPeriod, setSelectedPeriod] = useState(null);
+  const [selectedPeriod, setSelectedPeriod] = useState(() => getLiveBellPeriodInfo(new Date()).period || 1);
   const [isLoading, setIsLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
 
@@ -20,9 +21,6 @@ export const LiveTimetable = () => {
       const res = await api.get(url);
       if (res.data.success) {
         setLiveData(res.data);
-        if (!selectedPeriod) {
-          setSelectedPeriod(res.data.activePeriod);
-        }
       }
     } catch (err) {
       console.error('Failed to fetch live timetable:', err);
@@ -33,11 +31,17 @@ export const LiveTimetable = () => {
 
   useEffect(() => {
     fetchLiveTimetable(selectedPeriod);
+  }, [selectedPeriod]);
+
+  useEffect(() => {
     const clockTimer = setInterval(() => {
-      setCurrentTime(new Date().toLocaleTimeString());
+      const now = new Date();
+      setCurrentTime(now.toLocaleTimeString());
+      const bell = getLiveBellPeriodInfo(now);
+      setLiveInfo(bell);
     }, 1000);
     return () => clearInterval(clockTimer);
-  }, [selectedPeriod]);
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -83,37 +87,97 @@ export const LiveTimetable = () => {
               <span className="text-[10px] text-slate-300 uppercase font-semibold block">
                 Active Period
               </span>
-              <span className="text-lg font-black tracking-tight text-brand-300">
-                Period {liveData?.activePeriod || 1}
+              <span className="text-lg font-black tracking-tight text-brand-300 flex items-center justify-center gap-1.5">
+                {liveData?.isHoliday || liveInfo.liveStatus === 'holiday' ? (
+                  'सुट्टी (Holiday)'
+                ) : (liveData?.liveStatus || liveInfo.liveStatus) === 'recess' ? (
+                  'Recess (सुट्टी)'
+                ) : (liveData?.liveStatus || liveInfo.liveStatus) === 'before' ? (
+                  'Starts 11:10 AM'
+                ) : (liveData?.liveStatus || liveInfo.liveStatus) === 'after' ? (
+                  'School Closed'
+                ) : (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    Period {liveData?.currentLivePeriod || liveInfo.period}
+                  </>
+                )}
               </span>
+              {!(liveData?.isHoliday || liveInfo.liveStatus === 'holiday') && (
+                <span className="text-[10px] text-slate-400 block font-normal">
+                  {liveData?.currentPeriodInfo?.startTime && liveData?.currentPeriodInfo?.startTime !== '-'
+                    ? `${liveData.currentPeriodInfo.startTime} – ${liveData.currentPeriodInfo.endTime}`
+                    : liveInfo.timing}
+                </span>
+              )}
             </div>
           </div>
         </div>
       </div>
 
       {/* Period Quick Nav Bar */}
-      <div className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-        <div className="flex items-center gap-2">
-          <Clock className="w-4 h-4 text-brand-600" />
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-            Inspect School During:
-          </span>
+      <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-subtle">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-brand-50 dark:bg-brand-950/60 text-brand-600 flex items-center justify-center">
+            <Clock className="w-4 h-4" />
+          </div>
+          <div>
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 block">
+              Inspect School During:
+            </span>
+            {selectedPeriod !== (liveData?.currentLivePeriod || liveInfo.period) && (
+              <span className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold block">
+                Viewing Period {selectedPeriod} • Live Bell is currently Period {liveData?.currentLivePeriod || liveInfo.period}
+              </span>
+            )}
+          </div>
         </div>
 
-        <div className="flex items-center gap-1.5 overflow-x-auto">
-          {PERIOD_TIMINGS.map((p) => (
+        <div className="flex flex-wrap items-center gap-2">
+          {selectedPeriod !== (liveData?.currentLivePeriod || liveInfo.period) && (
             <button
-              key={p.period}
-              onClick={() => setSelectedPeriod(p.period)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                selectedPeriod === p.period
-                  ? 'bg-brand-600 text-white shadow-sm shadow-brand-500/20'
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-              }`}
+              onClick={() => setSelectedPeriod(liveData?.currentLivePeriod || liveInfo.period)}
+              className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100 transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer"
             >
-              P{p.period}
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Jump to Live (P{liveData?.currentLivePeriod || liveInfo.period})</span>
             </button>
-          ))}
+          )}
+
+          <div className="flex items-center gap-1 overflow-x-auto">
+            {PERIOD_TIMINGS.map((p) => {
+              const livePeriodNum = liveData?.currentLivePeriod || liveInfo.period;
+              const isCurrentlyLive = livePeriodNum === p.period;
+              const isSelected = selectedPeriod === p.period;
+
+              return (
+                <button
+                  key={p.period}
+                  onClick={() => setSelectedPeriod(p.period)}
+                  className={`relative px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                    isSelected
+                      ? 'bg-brand-600 text-white shadow-sm shadow-brand-500/20 scale-105'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  <span>P{p.period}</span>
+                  {isCurrentlyLive && (
+                    <span
+                      className={`inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[9px] font-black uppercase ${
+                        isSelected
+                          ? 'bg-white/20 text-white'
+                          : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                      }`}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      LIVE
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
           <Button
             variant="ghost"
             size="sm"
